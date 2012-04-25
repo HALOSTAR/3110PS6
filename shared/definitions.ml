@@ -80,7 +80,8 @@ type upgrades = bool * bool * bool (*ElitePikeman * EliteArcher * EliteKnight*)
 
 type unit_data = unit_id * unit_type * health * position
 type building_data = building_id * building_type * health * tile
-type team_data = score * unit_data list * building_data list * age * food_count * wood_count * upgrades
+type team_data = score * unit_data list * building_data list * age * food_count
+ * wood_count * upgrades
 type game_data = team_data * team_data * timer
 type resource_data = tile * resource_type * int
 
