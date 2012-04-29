@@ -2,9 +2,6 @@ open Definitions
 open Constants
 open Util
 open State
-(**)
-
-
 
 type game = state ref * int ref * Mutex.t (*No, This needs to be changed based
  on your implementation*)
@@ -35,14 +32,18 @@ let initUnitsAndBuildings ((st, s, m):game) : unit =
   let rec init_units num t c = if num = 0 then [] else 
     let (a1,a2,a3,a4) = (next_available_id(),
     Villager, cVILLAGER_HEALTH, t) in
-    Netgraphics.send_update (AddUnit(a1,a2,position_of_tile(a4),a3,c));
+    Netgraphics.send_update (AddUnit(a1,a2,position_of_tile(4,4),a3,c));
     (a1,a2,a3,position_of_tile(a4))::(init_units (num-1) t c) in
   let init_building l c = 
     let (a1,a2,a3,a4) = (next_available_id(), TownCenter, cTOWNCENTER_HEALTH,
     tile_of_pos(l)) in
-    Netgraphics.send_update (AddBuilding(a1, a2, a4, a3, c)); [(a1,a2,a3,a4)] in
+    Netgraphics.send_update (AddBuilding(a1, a2,(2,2),a3, c));[(a1,a2,a3,a4)] in
   let (a,b,c,(d,udr,bdr,e,f,g,h),(i,udb,bdb,j,k,n,o)) = !st in
-  st := (a,b,c,(d,(init_units cSTARTING_VILLAGER_COUNT red_adj_tile Red),
+  (*st := (a,b,c,(d,(init_units cSTARTING_VILLAGER_COUNT red_adj_tile Red),
+    (init_building red_town_hall_loc Red),e,f,g,h),(i,(init_units 
+    cSTARTING_VILLAGER_COUNT blue_adj_tile Blue), (init_building 
+    blue_town_hall_loc Blue),j,k,n,o))*)
+ st := (a,b,c,(d,(init_units cSTARTING_VILLAGER_COUNT red_adj_tile Red),
     (init_building red_town_hall_loc Red),e,f,g,h),(i,(init_units 
     cSTARTING_VILLAGER_COUNT blue_adj_tile Blue), (init_building 
     blue_town_hall_loc Blue),j,k,n,o))
@@ -59,8 +60,15 @@ let handleAction g act c : command =
      * colors are not equal. Else, match against all the possible actions.
      *)
     match act with
-		| QueueCollect unit_id -> failwith "not implemented"
-		| QueueMove(unit_id,pos) -> failwith "not implemented"
+      | QueueCollect unit_id ->
+          let pos = checkid_checkunit !st unit_id c in
+          let (boolean, state) = update_score_resource !st pos c in
+          if (pos <> (-1., -1.) && boolean)
+          then ((st := state); (Netgraphics.add_update(DisplayString
+(c, "successful"))); 
+Success) else 
+(Netgraphics.add_update(DisplayString(c, "failed")); Failed)
+      | QueueMove(unit_id,pos) -> failwith "not implemented"
     | Talk str -> Netgraphics.add_update(DisplayString(c, str)); Success
 		| QueueAttack (unit_id, attackable_object) -> failwith "not implemented"
 		| QueueBuild (unit_id, building_type) -> failwith "not implemented"

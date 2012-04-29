@@ -24,7 +24,7 @@ let bot c =
 		count := (mod) (!count + 1) 40;
 		let b = Random.int 100 in
 		let action = if b < 10 then audio_action else talk_action in
-    let res = send_action action 0 in
+    let res = send_action (QueueCollect (1)) 0 in
     let _ = match res with
       | Success -> print_endline ("Talk Success!")
       | Failed  -> print_endline ("Talk Failed") in
