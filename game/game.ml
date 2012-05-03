@@ -131,8 +131,104 @@ let handleStatus g status : command =
   Mutex.unlock m;
   Data data
 
+
+
 let check_for_game_over s curr_time : game_result option =
-  failwith "not implemented"
+  let (st, stime, m) = s in
+    let ifTimeout = (Unix.gettimeofday() -. !stime) >= cTIME_LIMIT in
+    let rteam = st.red_team_data  in 
+    let bteam = st.blue_team_data in
+    let rscore = rteam.score in
+    let bscore = bteam.score in
+    let rlen = (List.length rteam.udl) in
+    let blen = (List.length bteam.udl) in
+    let rcenter = List.fold_left (fun a bdrec -> ((bdrec.bdrec_bt = TownCenter)
+      || a)) false rteam.bdl in
+    let bcenter = List.fold_left (fun a bdrec -> ((bdrec.bdrec_bt = TownCenter)
+      || a)) false bteam.bdl in
+    match ifTimeout with 
+    false -> 
+        match ((rlen, rcenter),(blen, bcenter)) with
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl <> 0 && bc)  -> None
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl <>0 &&bc)->Some(Winner Blue)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl <> 0 && bc) ->
+                Some(Winner Blue)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl = 0 && bc)->Some(Winner Red)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl <> 0 && not bc) ->
+                Some(Winner Red)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl = 0 && bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl <> 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl = 0 && bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl <> 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl <> 0 && bc) -> 
+                Some(Winner Blue)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl = 0 && not bc) -> 
+                Some(Winner Red)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl = 0 && bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl <> 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl = 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl = 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl = 0 && not bc)  -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+    true ->  match ((rlen, rcenter),(blen, bcenter)) with
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl <> 0 && bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl <>0 &&bc)->Some(Winner Blue)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl <> 0 && bc) ->
+                Some(Winner Blue)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl = 0 && bc)->Some(Winner Red)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl <> 0 && not bc) ->
+                Some(Winner Red)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl = 0 && bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl <> 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl = 0 && bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl <> 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl <> 0 && bc) -> 
+                Some(Winner Blue)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl = 0 && not bc) -> 
+                Some(Winner Red)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl = 0 && bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl <> 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl <> 0 && not rc && bl = 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl = 0 && not bc) -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+        | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl = 0 && not bc)  -> 
+                if rscore > bscore then Some(Winner Red) else if rscore < bscore
+                then Some(Winner Blue) else Some (Tie)
+
 
 let handleTime g new_time : game_result option = 
   let (st, s, m) = g in
