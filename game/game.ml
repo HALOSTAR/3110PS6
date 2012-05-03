@@ -147,7 +147,7 @@ let check_for_game_over s curr_time : game_result option =
     let bcenter = List.fold_left (fun a bdrec -> ((bdrec.bdrec_bt = TownCenter)
       || a)) false bteam.bdl in
     match ifTimeout with 
-    false -> 
+    | false -> 
         match ((rlen, rcenter),(blen, bcenter)) with
         | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl <> 0 && bc)  -> None
         | ((rl, rc),(bl, bc)) when (rl = 0 && rc && bl <>0 &&bc)->Some(Winner Blue)
@@ -187,7 +187,7 @@ let check_for_game_over s curr_time : game_result option =
         | ((rl, rc),(bl, bc)) when (rl = 0 && not rc && bl = 0 && not bc)  -> 
                 if rscore > bscore then Some(Winner Red) else if rscore < bscore
                 then Some(Winner Blue) else Some (Tie)
-    true ->  match ((rlen, rcenter),(blen, bcenter)) with
+    | true ->  match ((rlen, rcenter),(blen, bcenter)) with
         | ((rl, rc),(bl, bc)) when (rl <> 0 && rc && bl <> 0 && bc) -> 
                 if rscore > bscore then Some(Winner Red) else if rscore < bscore
                 then Some(Winner Blue) else Some (Tie)
