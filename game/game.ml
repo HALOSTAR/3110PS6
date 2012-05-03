@@ -141,7 +141,7 @@ let handleTime g new_time : game_result option =
   (match res with
    | Some c -> ()
    | None -> 
-       handle_attacks !st
+       handle_attacks !st new_time
 
 
 );

@@ -298,6 +298,9 @@ st.blue_team_data.up in
     ElitePikeman -> unit_upgrades.pikeman
     | EliteArcher -> unit_upgrades.archer
     | EliteKnight -> unit_upgrades.knight
+    | Pikeman -> (unit_upgrades.pikeman = false)
+    | Archer -> (unit_upgrades.archer = false)
+    | Knight -> (unit_upgrades.knight = false)
     | _ -> true
             
 (* For QueueSpawn - checks if the unit type is in the right age 
@@ -408,7 +411,7 @@ let upgrade_age (st:state) (c:color) : bool =
     let (food_count, wood_count) = (team_data.fc, team_data.wc) in
   team_data.fc <- (food_count-food_cost);team_data.wc <- (wood_count-wood_cost);
   team_data.a <- ImperialAge in
-  let upgrade_gui = Netgraphics.send_update (UpgradeAge (c)) in
+  let upgrade_gui = Netgraphics.add_update (UpgradeAge (c)) in
   if (team_data.a <> ImperialAge) then (upgrade_state; upgrade_gui; true)
   else false
 
@@ -446,7 +449,7 @@ let upgrade_unit (st:state) (c:color) (utype:unit_type) : bool =
       else acc) () lst in
     traverse_units (team_data.udl); team_data.fc <-(food_count-food_cost); 
     team_data.wc <-(wood_count-wood_cost) in
-  let upgrade_gui = Netgraphics.send_update (UpgradeUnit (inf_version, c)) in
+  let upgrade_gui = Netgraphics.add_update (UpgradeUnit (inf_version, c)) in
   if (check_age) && (already_upgraded = false) then (upgrade_state;
     upgrade_gui; true) else false
 
@@ -512,11 +515,10 @@ let get_resource_status (st:state) : resource_data list =
 
 (* Takes the color of the target, unit_type and position of the attacker, and
  * the queue of attacks for the attacker.
- * Returns: Queue of attacks with the first being valid
+ * Returns: Queue of attacks with the first being valid; unit
  * Validity: target is in range, not dead *)
 let rec find_first_attack (st:state) (ct:color) (utype:unit_type) (pos:position)
-(attacks:attackable_object Queue.t) :
-    attackable_object Queue.t =
+(attacks:attackable_object Queue.t) : unit =
   let target_health =
     match Queue.peek attacks with
       Building b -> get_building_health st ct b
@@ -527,19 +529,72 @@ let rec find_first_attack (st:state) (ct:color) (utype:unit_type) (pos:position)
         Building b -> position_of_tile (get_building_tile st ct b)
         | Unit u -> get_unit_pos st ct u in
     (length_of_range (get_unit_type_range utype)) >= (distance pos targetpos) in
-  if target_health > 0 && check_range then attacks
-  else if (Queue.length attacks) = 1 then (Queue.create())
+  if (target_health > 0 && check_range) then ()
+  else if (Queue.length attacks) = 1 then ignore(Queue.pop attacks)
   else (ignore(Queue.pop attacks); find_first_attack st ct utype pos attacks)
-    
 
 (* For handleTime - finds (if any) valid attacks for each unit and removes
  * them from the attack queue. Also subtracts health from targets. Finally,
  * updates the GUI *)  
-let handle_attacks (st:state) : unit =
-  let red_attack_queue = st.red_attack in
-  let blue_attack_queue = st.blue_attack in
-  let traverse_attacks lst c = List.fold_left 
+let handle_attacks (st:state) (curr_time:float) : unit =
+  let check_not_coolingdown ca id =
+    let team_cooldowns = if ca = Red then st.red_ctime else st.blue_ctime in
+    let check lst = List.fold_left (fun acc hd -> if hd.cdrec_uid = id then
+      (hd.starttime = (-1.)) else acc) false lst in
+    check team_cooldowns in
+  let update_unit_health_state ct id new_health = 
+    let unitdata = if ct = Red then st.red_team_data.udl else 
+      st.blue_team_data.udl in
+    let update_health lst = List.fold_left (fun acc hd -> 
+      if hd.udrec_uid = id then hd.udrec_h <- new_health else acc) () lst in
+    update_health unitdata in
+  let update_unit_health_gui id new_health = 
+    Netgraphics.add_update (UpdateUnit (id,new_health)) in
+  let update_building_health_state ct id new_health =
+    let buildingdata = if ct = Red then st.red_team_data.bdl else 
+      st.blue_team_data.bdl in
+    let update_health lst = List.fold_left (fun acc hd -> 
+      if hd.bdrec_bi = id then hd.bdrec_h <- new_health else acc) () lst in
+    update_health buildingdata in
+  let update_building_health_gui id new_health = 
+    Netgraphics.add_update (UpdateBuilding (id,new_health)) in
+  let update_cooldowns ca id =
+    let team_ctime = if ca = Red then st.red_ctime else st.blue_ctime in
+    let new_ctime = get_unit_type_cooldown (get_unit_type st ca id) in
+    let update lst = List.fold_left (fun acc hd -> if hd.cdrec_uid = id then
+      (hd.ctime <- new_ctime; hd.starttime <- curr_time) else acc) () lst
+    in update team_ctime in
+  let get_new_health_unit attacker_type target_color target_id =
+    let health_lost = get_unit_type_attack_damage attacker_type in
+    let current_health = get_unit_health st target_color target_id in
+    let new_health = current_health - health_lost in
+    if new_health < 0 then 0 else new_health in
+  let get_new_health_building attacker_type target_color target_id =
+    let health_lost = get_unit_type_attack_damage attacker_type in
+    let current_health = get_building_health st target_color target_id in
+    let new_health = current_health - health_lost in
+    if new_health < 0 then 0 else new_health in
+  let traverse_attacks lst ca ct = List.fold_left 
     (fun acc hd ->
-       let pos_of_attacker = get_unit_pos st c hd.aqueue_uid in
-       let range_of_attacker = get_unit_type st c hd.aqueue_uid in
-       let 
+      if (check_not_coolingdown ca hd.aqueue_uid) then
+        (let pos_of_attacker = get_unit_pos st ct hd.aqueue_uid in
+        let type_of_attacker = get_unit_type st ct hd.aqueue_uid in
+        (find_first_attack st ct type_of_attacker pos_of_attacker 
+         hd.attacks); 
+        if (Queue.length hd.attacks) > 0 then
+          (match (Queue.pop hd.attacks) with
+            Building b ->
+              let new_health = get_new_health_building type_of_attacker ct b in
+                update_building_health_state ct b new_health;
+                update_building_health_gui b new_health; update_cooldowns ca
+                hd.aqueue_uid    
+            | Unit u ->
+                let new_health = get_new_health_unit type_of_attacker ct u in
+                  update_unit_health_state ct u new_health;
+                  update_unit_health_gui u new_health; update_cooldowns ca
+                  hd.aqueue_uid)
+        else ()) else acc) () lst in 
+  (traverse_attacks st.red_attack Red Blue);
+  (traverse_attacks st.blue_attack Blue Red)
+      
+           
