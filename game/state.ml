@@ -518,7 +518,8 @@ let get_resource_status (st:state) : resource_data list =
  * Returns: Queue of attacks with the first being valid; unit
  * Validity: target is in range, not dead *)
 let rec find_first_attack (st:state) (ct:color) (utype:unit_type) (pos:position)
-(attacks:attackable_object Queue.t) : unit =
+(attacks:attackable_object Queue.t) : unit = if (Queue.length attacks = 0) then
+() else
   let target_health =
     match Queue.peek attacks with
       Building b -> get_building_health st ct b
@@ -596,5 +597,47 @@ let handle_attacks (st:state) (curr_time:float) : unit =
         else ()) else acc) () lst in 
   (traverse_attacks st.red_attack Red Blue);
   (traverse_attacks st.blue_attack Blue Red)
-      
+
+(* For handleTime - Removes dead units and buildings from state and gui *)
+let remove_dead_units_and_buildings (st:state) : unit =
+  let remove_dead_units_gui lst =
+    let dead_units = List.filter (fun x -> x.udrec_h = 0) lst in
+    let remove_units = List.fold_left (fun acc hd ->
+      Netgraphics.add_update (RemoveUnit hd.udrec_uid)) () in
+    remove_units dead_units in 
+  let remove_dead_units_state = 
+    List.fold_left (fun acc hd -> if hd.udrec_h = 0 then acc else hd::acc) [] in
+  let remove_dead_buildings_gui lst =
+    let dead_buildings = List.filter (fun x -> x.bdrec_h = 0) lst in
+    let remove_buildings = List.fold_left (fun acc hd ->
+      Netgraphics.add_update (RemoveBuilding hd.bdrec_bi)) () in
+    remove_buildings dead_buildings in
+  let remove_dead_buildings_state = 
+    List.fold_left (fun acc hd -> if hd.bdrec_h = 0 then acc else hd::acc) [] in
+  remove_dead_units_gui st.red_team_data.udl; 
+  remove_dead_units_gui st.blue_team_data.udl; 
+  st.red_team_data.udl <- remove_dead_units_state st.red_team_data.udl;
+  st.blue_team_data.udl <- remove_dead_units_state st.blue_team_data.udl; 
+  remove_dead_buildings_gui st.red_team_data.bdl; 
+  remove_dead_buildings_gui st.blue_team_data.bdl; 
+  st.red_team_data.bdl <- remove_dead_buildings_state st.red_team_data.bdl;
+  st.blue_team_data.bdl <- remove_dead_buildings_state st.blue_team_data.bdl 
+
+(* For handleTime - removes all zero resources from state and gui *)
+let remove_zero_resources (st:state) : unit =
+  let remove_from_gui lst = 
+    let zero_resources = List.filter (fun x -> x.i = 0) lst in
+    let remove_resources = List.fold_left (fun acc hd ->
+      Netgraphics.add_update (RemoveResource hd.rdrec_t)) () in
+    remove_resources zero_resources in
+  let remove_from_state = List.fold_left (fun acc hd -> if hd.i = 0 then
+    acc else hd::acc) [] in
+  remove_from_gui st.resource_list;
+  st.resource_list <- remove_from_state st.resource_list
+
+(* For handleTime - checks cooldown, if the building is complete then set the
+ * Villager to not building, and add the building to the building list in state
+ * and the gui *)
+let handle_building_creation (st:state) (curr_time:float) : unit =
+  let 
            
