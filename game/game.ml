@@ -49,7 +49,9 @@ let initUnitsAndBuildings ((st, s, m):game) : unit =
     blue_town_hall_loc Blue),j,k,n,o))
 
 (* graphics updates already done *) 
-let startGame g : unit = () 
+let startGame g : unit = 
+  let (st, s, m) = g in
+  s := Unix.gettimeofday()
 
 let handleAction g act c : command = 
   let (st, s, m) = g in
@@ -130,7 +132,7 @@ let handleStatus g status : command =
   Data data
 
 let check_for_game_over s curr_time : game_result option =
-	failwith "not implemented"
+  failwith "not implemented"
 
 let handleTime g new_time : game_result option = 
   let (st, s, m) = g in
@@ -139,6 +141,9 @@ let handleTime g new_time : game_result option =
   (match res with
    | Some c -> ()
    | None -> 
-       failwith "not implemented");
+       handle_attacks !st
+
+
+);
   Mutex.unlock m;
   res
