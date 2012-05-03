@@ -284,7 +284,7 @@ st.blue_team_data in
 lst.wc <- (lst.wc - wood_cost) in
   let update_builder lst = List.fold_left (fun acc hd -> if
     hd.cdrec_uid = id then (hd.starttime <- (Unix.gettimeofday()); hd.ctime <-
-    (get_unit_type_cooldown (get_unit_type st c id)); hd.building <- true) else
+    cVILLAGER_COOLDOWN; hd.building <- true) else
      acc) () lst in
   subtract_resources (team_data_list); update_builder (team_build_list); st
 
@@ -298,6 +298,9 @@ st.blue_team_data.up in
     ElitePikeman -> unit_upgrades.pikeman
     | EliteArcher -> unit_upgrades.archer
     | EliteKnight -> unit_upgrades.knight
+    | Pikeman -> (unit_upgrades.pikeman = false)
+    | Archer -> (unit_upgrades.archer = false)
+    | Knight -> (unit_upgrades.knight = false)
     | _ -> true
             
 (* For QueueSpawn - checks if the unit type is in the right age 
@@ -408,7 +411,7 @@ let upgrade_age (st:state) (c:color) : bool =
     let (food_count, wood_count) = (team_data.fc, team_data.wc) in
   team_data.fc <- (food_count-food_cost);team_data.wc <- (wood_count-wood_cost);
   team_data.a <- ImperialAge in
-  let upgrade_gui = Netgraphics.send_update (UpgradeAge (c)) in
+  let upgrade_gui = Netgraphics.add_update (UpgradeAge (c)) in
   if (team_data.a <> ImperialAge) then (upgrade_state; upgrade_gui; true)
   else false
 
@@ -446,7 +449,7 @@ let upgrade_unit (st:state) (c:color) (utype:unit_type) : bool =
       else acc) () lst in
     traverse_units (team_data.udl); team_data.fc <-(food_count-food_cost); 
     team_data.wc <-(wood_count-wood_cost) in
-  let upgrade_gui = Netgraphics.send_update (UpgradeUnit (inf_version, c)) in
+  let upgrade_gui = Netgraphics.add_update (UpgradeUnit (inf_version, c)) in
   if (check_age) && (already_upgraded = false) then (upgrade_state;
     upgrade_gui; true) else false
 
@@ -512,11 +515,11 @@ let get_resource_status (st:state) : resource_data list =
 
 (* Takes the color of the target, unit_type and position of the attacker, and
  * the queue of attacks for the attacker.
- * Returns: Queue of attacks with the first being valid
+ * Returns: Queue of attacks with the first being valid; unit
  * Validity: target is in range, not dead *)
 let rec find_first_attack (st:state) (ct:color) (utype:unit_type) (pos:position)
-(attacks:attackable_object Queue.t) :
-    attackable_object Queue.t =
+(attacks:attackable_object Queue.t) : unit = if (Queue.length attacks = 0) then
+() else
   let target_health =
     match Queue.peek attacks with
       Building b -> get_building_health st ct b
@@ -527,19 +530,172 @@ let rec find_first_attack (st:state) (ct:color) (utype:unit_type) (pos:position)
         Building b -> position_of_tile (get_building_tile st ct b)
         | Unit u -> get_unit_pos st ct u in
     (length_of_range (get_unit_type_range utype)) >= (distance pos targetpos) in
-  if target_health > 0 && check_range then attacks
-  else if (Queue.length attacks) = 1 then (Queue.create())
+  if (target_health > 0 && check_range) then ()
+  else if (Queue.length attacks) = 1 then ignore(Queue.pop attacks)
   else (ignore(Queue.pop attacks); find_first_attack st ct utype pos attacks)
-    
 
 (* For handleTime - finds (if any) valid attacks for each unit and removes
  * them from the attack queue. Also subtracts health from targets. Finally,
  * updates the GUI *)  
-let handle_attacks (st:state) : unit =
-  let red_attack_queue = st.red_attack in
-  let blue_attack_queue = st.blue_attack in
-  let traverse_attacks lst c = List.fold_left 
+let handle_attacks (st:state) (curr_time:float) : unit =
+  let check_not_coolingdown ca id =
+    let team_cooldowns = if ca = Red then st.red_ctime else st.blue_ctime in
+    let check lst = List.fold_left (fun acc hd -> if hd.cdrec_uid = id then
+      (hd.starttime = (-1.)) else acc) false lst in
+    check team_cooldowns in
+  let update_unit_health_state ct id new_health = 
+    let unitdata = if ct = Red then st.red_team_data.udl else 
+      st.blue_team_data.udl in
+    let update_health lst = List.fold_left (fun acc hd -> 
+      if hd.udrec_uid = id then hd.udrec_h <- new_health else acc) () lst in
+    update_health unitdata in
+  let update_unit_health_gui id new_health = 
+    Netgraphics.add_update (UpdateUnit (id,new_health)) in
+  let update_building_health_state ct id new_health =
+    let buildingdata = if ct = Red then st.red_team_data.bdl else 
+      st.blue_team_data.bdl in
+    let update_health lst = List.fold_left (fun acc hd -> 
+      if hd.bdrec_bi = id then hd.bdrec_h <- new_health else acc) () lst in
+    update_health buildingdata in
+  let update_building_health_gui id new_health = 
+    Netgraphics.add_update (UpdateBuilding (id,new_health)) in
+  let update_cooldowns ca id =
+    let team_ctime = if ca = Red then st.red_ctime else st.blue_ctime in
+    let new_ctime = get_unit_type_cooldown (get_unit_type st ca id) in
+    let update lst = List.fold_left (fun acc hd -> if hd.cdrec_uid = id then
+      (hd.ctime <- new_ctime; hd.starttime <- curr_time) else acc) () lst
+    in update team_ctime in
+  let get_new_health_unit attacker_type target_color target_id =
+    let stab_bonus =
+      match (attacker_type, (get_unit_type st target_color target_id)) with
+        ((Archer|EliteArcher),(Pikeman|ElitePikeman)) |
+        ((Knight|EliteKnight),(Archer|EliteArcher)) |
+        ((Pikeman|ElitePikeman),(Knight|EliteKnight)) -> cSTAB_BONUS
+        | _ -> 0 in
+    let health_lost = get_unit_type_attack_damage attacker_type in
+    let current_health = get_unit_health st target_color target_id in
+    let new_health = current_health - health_lost - stab_bonus in
+    if new_health < 0 then 0 else new_health in
+  let get_new_health_building attacker_type target_color target_id =
+    let health_lost = get_unit_type_attack_damage attacker_type in
+    let current_health = get_building_health st target_color target_id in
+    let new_health = current_health - health_lost in
+    if new_health < 0 then 0 else new_health in
+  let traverse_attacks lst ca ct = List.fold_left 
     (fun acc hd ->
-       let pos_of_attacker = get_unit_pos st c hd.aqueue_uid in
-       let range_of_attacker = get_unit_type st c hd.aqueue_uid in
-       let 
+      if (check_not_coolingdown ca hd.aqueue_uid) then
+        (let pos_of_attacker = get_unit_pos st ct hd.aqueue_uid in
+        let type_of_attacker = get_unit_type st ct hd.aqueue_uid in
+        (find_first_attack st ct type_of_attacker pos_of_attacker 
+         hd.attacks); 
+        if (Queue.length hd.attacks) > 0 then
+          (match (Queue.pop hd.attacks) with
+            Building b ->
+              let new_health = get_new_health_building type_of_attacker ct b in
+                update_building_health_state ct b new_health;
+                update_building_health_gui b new_health; update_cooldowns ca
+                hd.aqueue_uid    
+            | Unit u ->
+                let new_health = get_new_health_unit type_of_attacker ct u in
+                  update_unit_health_state ct u new_health;
+                  update_unit_health_gui u new_health; update_cooldowns ca
+                  hd.aqueue_uid)
+        else ()) else acc) () lst in 
+  (traverse_attacks st.red_attack Red Blue);
+  (traverse_attacks st.blue_attack Blue Red)
+
+(* For handleTime - Removes dead units and buildings from state and gui 
+ * Updates and sends score to gui *)
+let remove_dead_units_and_buildings (st:state) : unit =
+  let remove_dead_units_gui lst =
+    let dead_units = List.filter (fun x -> x.udrec_h = 0) lst in
+    let total_dead = List.length dead_units in
+    let remove_units = List.fold_left (fun acc hd ->
+      Netgraphics.add_update (RemoveUnit hd.udrec_uid)) () in
+    remove_units dead_units; total_dead in 
+  let remove_dead_units_ctime lst dead_id =
+    List.fold_left (fun acc hd -> if hd.cdrec_uid = dead_id then acc else 
+    hd::acc) [] lst in
+  let remove_dead_units_moves lst dead_id =
+    List.fold_left (fun acc hd -> if hd.mqueue_uid = dead_id then acc 
+    else hd::acc) [] lst in
+  let remove_dead_units_attacks lst dead_id =
+    List.fold_left (fun acc hd -> if hd.aqueue_uid = dead_id then acc 
+    else hd::acc) [] lst in
+  let remove_dead_units_udl c lst =
+    List.fold_left (fun acc hd -> if hd.udrec_h = 0 then 
+    ((if c = Red then
+       (st.red_ctime <- remove_dead_units_ctime st.red_ctime hd.udrec_uid;
+        st.red_move <- remove_dead_units_moves st.red_move hd.udrec_uid;
+        st.red_attack <- remove_dead_units_attacks st.red_attack hd.udrec_uid)
+      else
+        (st.blue_ctime <- remove_dead_units_ctime st.blue_ctime hd.udrec_uid;
+        st.blue_move <- remove_dead_units_moves st.blue_move hd.udrec_uid;
+        st.blue_attack <-remove_dead_units_attacks st.blue_attack hd.udrec_uid)
+     ) ;acc)
+       else hd::acc) [] lst in
+  let remove_dead_buildings_gui lst =
+    let dead_buildings = List.filter (fun x -> x.bdrec_h = 0) lst in
+    let total_dead = List.length dead_buildings in
+    let remove_buildings = List.fold_left (fun acc hd ->
+      Netgraphics.add_update (RemoveBuilding hd.bdrec_bi)) () in
+    remove_buildings dead_buildings; total_dead in
+  let remove_dead_buildings_state = 
+    List.fold_left (fun acc hd -> if hd.bdrec_h = 0 then acc else hd::acc) [] in
+  st.red_team_data.s <- (st.red_team_data.s + 
+    (remove_dead_units_gui st.red_team_data.udl) * cKILL_UNIT_SCORE); 
+  st.blue_team_data.s <- (st.blue_team_data.s + 
+    (remove_dead_units_gui st.blue_team_data.udl) * cKILL_UNIT_SCORE); 
+  st.red_team_data.udl <- remove_dead_units_udl Red st.red_team_data.udl;
+  st.blue_team_data.udl <- remove_dead_units_udl Blue st.blue_team_data.udl; 
+  st.red_team_data.s <- st.red_team_data.s + 
+    (remove_dead_buildings_gui st.red_team_data.bdl) * cKILL_BUILDING_SCORE; 
+  st.blue_team_data.s <- st.blue_team_data.s + 
+    (remove_dead_buildings_gui st.blue_team_data.bdl) * cKILL_BUILDING_SCORE; 
+  st.red_team_data.bdl <- remove_dead_buildings_state st.red_team_data.bdl;
+  st.blue_team_data.bdl <- remove_dead_buildings_state st.blue_team_data.bdl 
+
+(* For handleTime - removes all zero resources from state and gui *)
+let remove_zero_resources (st:state) : unit =
+  let remove_from_gui lst = 
+    let zero_resources = List.filter (fun x -> x.i = 0) lst in
+    let remove_resources = List.fold_left (fun acc hd ->
+      Netgraphics.add_update (RemoveResource hd.rdrec_t)) () in
+    remove_resources zero_resources in
+  let remove_from_state = List.fold_left (fun acc hd -> if hd.i = 0 then
+    acc else hd::acc) [] in
+  remove_from_gui st.resource_list;
+  st.resource_list <- remove_from_state st.resource_list
+
+(* For handleTime - checks cooldown, if the building is complete then set the
+ * Villager to not building, and add the building to the building list in state
+ * and the gui *)
+let handle_building_creation (st:state) (curr_time:float) : unit =
+  let check_if_complete building = building.building &&
+    (curr_time -. building.starttime) >= building.ctime in
+  let create_in_gui_and_state lst c =
+    let buildingdata = if c = Red then st.red_team_data.bdl else
+st.blue_team_data.bdl in
+    List.fold_left (fun (acc_ctime, acc_bdl) hd -> 
+      if check_if_complete hd then
+       ( let new_id = next_available_id() in
+        let new_tile = tile_of_pos (get_unit_pos st c hd.cdrec_uid) in
+        let new_type = Barracks in
+        let new_health = cBARRACKS_HEALTH in
+        Netgraphics.add_update (AddBuilding (new_id, new_type, new_tile,
+        new_health, c));
+        (hd.building <- false; hd.starttime <- (-1.); hd.ctime <- (-1.));
+        ((({cdrec_uid=new_id; ctime=(-1.); starttime=(-1.); building=false})::hd
+        ::acc_ctime), (({bdrec_bi=new_id; bdrec_bt=new_type; bdrec_h=new_health;
+        bdrec_t=new_tile})::acc_bdl)) )
+      else (hd::acc_ctime, acc_bdl)) ([], buildingdata) lst in
+  let ((new_red_cooldown, new_red_building),
+       (new_blue_cooldown, new_blue_building)) = 
+    (create_in_gui_and_state st.red_ctime Red,
+     create_in_gui_and_state st.blue_ctime Blue) in
+  st.red_ctime <- new_red_cooldown;
+  st.red_team_data.bdl <- new_red_building;
+  st.blue_ctime <- new_blue_cooldown;
+  st.blue_team_data.bdl <- new_blue_building
+           
+

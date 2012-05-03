@@ -237,9 +237,10 @@ let handleTime g new_time : game_result option =
   (match res with
    | Some c -> ()
    | None -> 
-       handle_attacks !st
-
-
+       handle_attacks !st new_time;
+       remove_dead_units_and_buildings !st;
+       remove_zero_resources !st;
+       handle_building_creation !st new_time;
 );
   Mutex.unlock m;
   res
