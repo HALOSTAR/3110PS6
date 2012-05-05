@@ -1,6 +1,7 @@
 open Constants
 open Definitions
 open Util
+open Netgraphics
 
 (* unit_data record *)
 type udrec = {mutable udrec_uid:unit_id; mutable udrec_ut:unit_type; 
@@ -39,67 +40,60 @@ Queue.t}
  * red move queue      blue move queue *)
 type state = {mutable resource_list:rdrec list; 
 mutable red_team_data:tdrec; mutable blue_team_data:tdrec;
-mutable red_build_ctime:cdrec list; mutable blue_build_ctime:cdrec list; 
 mutable red_ctime:cdrec list; mutable blue_ctime:cdrec list;
 mutable red_move:mqueue list; mutable blue_move:mqueue list; 
 mutable red_attack:aqueue list; mutable blue_attack:aqueue list}
 
-(* empty state, place food, wood units *) 
-(*
+let empty_upgrades () : uprec =
+   {pikeman=false; archer=false; knight=false}
+
+let empty_team_data () : tdrec =
+   {s=0; udl= []; bdl= []; a=DarkAge; fc=0; wc=0; up=empty_upgrades() }
+
+let init_resources : rdrec list =
+  let init_food =
+    List.fold_left (fun acc hd -> {rdrec_t=hd; rt=Food; i=cINITIAL_FOOD}::acc)
+    [] cFOOD_TILES in
+  let init_wood =
+    List.fold_left (fun acc hd -> {rdrec_t=hd; rt=Wood; i=cINITIAL_WOOD}::acc)
+    init_food cWOOD_TILES in
+  init_wood
+
 let empty () : state =
-  let f acc hd t c = (hd, t, c)::acc in
-  let resourcelist =
-    List.fold_left (fun acc1 hd1 -> f acc1 hd1 Wood cINITIAL_WOOD) 
-      (List.fold_left (fun acc2 hd2 -> f acc2 hd2 Food cINITIAL_FOOD)
-      [] cFOOD_TILES) cWOOD_TILES in
-  (resourcelist, [], [], (0,[],[],DarkAge,0,0,(false,false,false)), 
-    (0,[],[],DarkAge,0,0,(false,false,false))) *)
+  { resource_list=init_resources;
+   red_team_data=empty_team_data(); 
+   blue_team_data=empty_team_data();
+   red_ctime=[]; blue_ctime=[]; red_move=[]; blue_move=[]; red_attack=[];
+   blue_attack=[] }
 
-(* For queueCollect. Checks if c has unit id and whether the unit is a Villager
- * Returns position (-1., -1.) if id or unit check fails, the position of
- * the Villager otherwise *)
-(*
-let checkid_checkunit (st:state) (unitid:unit_id) (c:color) : position =
-  let (r, cr, cb, tdr, tdb) = st in
-  let (sr, ur, br, ar, fr, wr, upr) = tdr in
-  let (sb, ub, bb, ab, fb, wb, upb) = tdb in
-  let idInList lst = List.fold_left (fun (count, unittype, unitpos) hd ->
-    match hd with
-      (id, t, h, p) -> if id = unitid then (count+1, t, p) 
-      else (count, unittype, unitpos)) 
-      (0, Villager, (0.0, 0.0)) lst in
-  let (rcount, rtype, rpos) = idInList ur in
-  let (bcount, btype, bpos) = idInList ub in
-  if (rcount = 1 && bcount = 0 && rtype = Villager) 
-  then (if c = Red then rpos else (-1., -1.))
-  else if (rcount = 0 && bcount = 1 && btype = Villager)
-  then (if c = Blue then bpos else (-1.,-1.))
-  else (-1.,-1.) *)
+let init_unit_state (st:state) (id:unit_id) (pos:position) (c:color) : unit =
+  let new_unit = {udrec_uid=id; udrec_ut=Villager; udrec_h=cVILLAGER_HEALTH;
+    udrec_pos=pos} in
+  let new_ctime ={cdrec_uid=id; ctime=(-1.); starttime=(-1.); building=false} in
+  let new_move = {mqueue_uid=id; moves=(Queue.create())} in
+  if c = Red then
+  (st.red_team_data.udl <- new_unit::(st.red_team_data.udl);
+  st.red_ctime <- new_ctime::(st.red_ctime);
+  st.red_move <- new_move::(st.red_move))
+  else
+ (st.blue_team_data.udl <- new_unit::(st.blue_team_data.udl);
+  st.blue_ctime <- new_ctime::(st.blue_ctime);
+  st.blue_move <- new_move::(st.blue_move))
 
-(* Checks if the Villager is standing on a valid resource and updates the
- * resource count and team c score. Returns true and a new state if successful,
- * false and old state otherwise *) 
-(*
-let update_score_resource (st:state) (pos:position) (c:color) : bool*rtype*
-rcount*collected*state =
-  let (r, cr, cb, tdr, tdb) = st in
-  let update_resource_count lst = List.fold_left (fun (t_or_f, r_type, 
-    rsdata_list) (t, rs, i) ->
-    if (i >= 1) && (position_of_tile t = pos) then 
-      (true, rs, (t,rs,(i-1))::rsdata_list)
-    else (t_or_f, r_type, (t,rs,i)::rsdata_list)) (false, Food, []) lst in
-  let update_score (s, udl, bdl, a, fc, wc, u) = if a = DarkAge then 
-    ((s+cRESOURCE_COLLECTED),udl, bdl, a, fc, wc, u) else 
-    ((s+cADVANCED_RESOURCE_COLLECTED),udl,bdl,a,fc,wc,u) in
-  match (update_resource_count r) with
-    (t_or_f, t_type, rsdata_list) -> if t_or_f then (if c = Red then (t_or_f, 
-                                             (rsdata_list, cr, cb, 
-                                             (update_score tdr), 
-                                             tdb)) else (t_or_f, (rsdata_list, 
-                                             cr, cb, tdr, (update_score 
-                                             tdb)))) else
+let init_unit_gui (id:unit_id) (pos:position) (c:color) : unit =
+  Netgraphics.add_update (AddUnit (id, Villager, pos, cVILLAGER_HEALTH, c))
 
-                               (t_or_f, (r, cr, cb, tdr, tdb)) *)
+let init_building_state (st:state) (id:building_id) (t:tile) (c:color) : unit =
+  let new_building = {bdrec_bi=id; bdrec_bt=TownCenter; bdrec_h=
+    cTOWNCENTER_HEALTH; bdrec_t=t} in
+  if c = Red then
+  (st.red_team_data.bdl <- new_building::(st.red_team_data.bdl))
+  else
+  (st.blue_team_data.bdl <- new_building::(st.blue_team_data.bdl))
+
+let init_building_gui (id:building_id) (t:tile) (c:color) : unit =
+  Netgraphics.add_update (AddBuilding (id, TownCenter, t, cTOWNCENTER_HEALTH, 
+  c))
 
 (* For handleAction
  * Given: a state, color c, and unit_id
@@ -135,6 +129,45 @@ st.blue_team_data.udl in
 hd.udrec_pos else acc) (-1., -1.) lst in
   get_pos (unit_data_list)
 
+let check_on_resource (st:state) (c:color) (id:unit_id) : bool =
+  let curr_pos = tile_of_pos (get_unit_pos st c id) in
+  List.fold_left (fun acc hd -> if hd.rdrec_t = curr_pos then true else acc)
+    false st.resource_list
+
+(* Changes the score of team c, updates the resource count of team c and 
+ * total resources available *)
+let collect_resource (st:state) (c:color) (id:unit_id) : unit =
+  let curr_pos =  tile_of_pos (get_unit_pos st c id) in
+  let teamdata = if c = Red then st.red_team_data else st.blue_team_data in
+  let rtype = List.fold_left (fun acc hd -> if hd.rdrec_t = curr_pos then
+    hd.rt else acc) Food st.resource_list in
+  let to_collect =
+    if teamdata.a = DarkAge then cRESOURCE_COLLECTED else
+      cADVANCED_RESOURCE_COLLECTED in
+  let amount_remaining = 
+    List.fold_left (fun acc hd -> if hd.rdrec_t = curr_pos then hd.i else acc)
+      0 st.resource_list in
+  let collected = min to_collect amount_remaining in        
+  let update_count =
+    List.fold_left (fun acc hd -> if hd.rdrec_t = curr_pos then
+      (hd.i <- (if ((hd.i - collected) <= 0) then 0 
+      else (hd.i - collected)); hd.i) else acc) (-1) st.resource_list in
+  let update_ctime_list = 
+    let ctime_list = if c = Red then st.red_ctime else st.blue_ctime in
+    List.fold_left (fun acc hd -> if hd.cdrec_uid = id then (hd.ctime <-
+      cVILLAGER_COOLDOWN; hd.starttime <- Unix.gettimeofday()) else acc) ()
+      ctime_list in
+  let update_state = 
+    teamdata.s <- ((teamdata.s) + collected);
+    update_ctime_list;
+    if rtype = Food then (teamdata.fc <- (teamdata.fc + collected))
+    else (teamdata.wc <- (teamdata.wc + collected)) in
+  let update_gui = Netgraphics.add_update (DoCollect (id, c, rtype, collected));
+    Netgraphics.add_update (UpdateScore (c, teamdata.s));
+    Netgraphics.add_update (UpdateResource (curr_pos, update_count)) in
+  update_state; update_gui
+
+
 (* Returns the tile of the building given its id *)
 let get_building_tile (st:state) (c:color) (id:building_id) : tile =
   let building_data_list = if c = Red then st.red_team_data.bdl else
@@ -152,18 +185,19 @@ position Queue.t =
   let normalized_vector start dest =
     let (x1,y1) = start in
     let (x2,y2) = dest in
-  ((x2-.x1),(y2-.y1)) in
+    let dist = distance (x1, y1) (x2, y2) in
+  ((x2-.x1)/.dist,(y2-.y1)/.dist) in
   let unit_speed = get_unit_type_speed (get_unit_type st c id) in
   let moves_queue = Queue.create () in
   let rec enqueue_moves curr =
-    if (distance (curr) (pos)) <= unit_speed then Queue.add (pos) (moves_queue)
+    if (distance (curr) (pos)) <= unit_speed then(Queue.add (pos) (moves_queue))
     else 
       let (inter_posx, inter_posy) =
         let (x1, y1) = curr in
         let (x2, y2) = normalized_vector curr pos in
-(x1+.(x2*.unit_speed), y1+.(y2*.unit_speed)) in
+(x1 +. (x2 *. unit_speed), y1 +. (y2 *. unit_speed)) in
       Queue.add (inter_posx, inter_posy) (moves_queue); enqueue_moves
-(inter_posx, inter_posy) in
+(inter_posx, inter_posy)  in
   if (current_position = pos) then moves_queue else 
 (enqueue_moves (current_position); moves_queue)
 
@@ -171,12 +205,12 @@ position Queue.t =
  * Takes: state, color, unit id, queue of moves to add
  * Returns: a new state with the moves added to the right unit *)
 let queue_moves (st:state) (c:color) (id:unit_id) (moves:position Queue.t) :
-state =
+unit =
   let team_move_list = if c = Red then st.red_move else st.blue_move in
   let team_moves_queue lst = List.fold_left (fun acc hd -> if hd.mqueue_uid =id 
                                             then hd.moves else acc) 
 (Queue.create()) lst in
-  Queue.transfer (moves) (team_moves_queue team_move_list); st
+  Queue.transfer (moves) (team_moves_queue team_move_list)
 
 (* Gets the unit's health 
  * Takes: state, color, unit id 
@@ -233,10 +267,50 @@ let check_tiles_valid_empty (st:state) (c:color) (id:unit_id) : bool =
       false else acc) true lst in
     (check_resources st.resource_list) && (check_buildings st.red_team_data.bdl)
      && (check_buildings st.blue_team_data.bdl) && (check_already_building
-     st.red_build_ctime) && (check_already_building st.blue_build_ctime) in
+     st.red_ctime) && (check_already_building st.blue_ctime) in
   let (tilex, tiley) = current_tile in
   (check_valid current_tile) && (check_empty (tilex,tiley) (tilex+1,tiley)
   (tilex,tiley+1) (tilex+1,tiley+1))
+
+let valid_empty (st:state) (c:color) (current_tile:tile) : bool =
+  let check_valid (r, c) =
+       ((is_valid_tile (r,c)) && (is_valid_tile (r+1,c)) &&
+       (is_valid_tile (r,c+1)) && (is_valid_tile (r+1,c+1))) in
+  let check_empty (r1,c1) (r2,c2) (r3,c3) (r4,c4) =
+    let check_resources lst = List.fold_left (fun acc hd -> 
+      if (hd.i > 0) &&
+         ((hd.rdrec_t = (r1,c1)) || (hd.rdrec_t = (r2,c2)) ||
+         (hd.rdrec_t = (r3,c3)) || (hd.rdrec_t = (r4,c4))) then false else acc)
+      true lst in
+    let check_buildings lst = List.fold_left (fun acc hd ->
+      if (hd.bdrec_h > 0) &&
+         ((hd.bdrec_t = (r1,c1)) || (hd.bdrec_t = (r2,c2)) ||
+         (hd.bdrec_t = (r3,c3)) || (hd.bdrec_t = (r4,c4))) then false else acc)
+      true lst in
+    let check_already_building lst = List.fold_left (fun acc hd ->
+      if (hd.building) &&
+         ((tile_of_pos (get_unit_pos st c (hd.cdrec_uid))) = current_tile) then
+      false else acc) true lst in
+    (check_resources st.resource_list) && (check_buildings st.red_team_data.bdl)
+     && (check_buildings st.blue_team_data.bdl) && (check_already_building
+     st.red_ctime) && (check_already_building st.blue_ctime) in
+  let (tilex, tiley) = current_tile in
+  (check_valid current_tile) && (check_empty (tilex,tiley) (tilex+1,tiley)
+  (tilex,tiley+1) (tilex+1,tiley+1))
+
+let rec choose_tile_Red (st:state) (t:tile) : tile =
+  if not (valid_empty st Red t) || not (valid_empty st Blue t) then
+    let y = Random.int (cNUM_X_TILES/2) - 1 in
+    let x = Random.int (cNUM_Y_TILES) - 1 in
+  choose_tile_Red st (x, y)
+  else t
+
+let rec choose_tile_Blue (st:state) (t:tile) : tile =
+  if not (valid_empty st Red t) || not (valid_empty st Blue t) then
+    let y = Random.int (cNUM_X_TILES/2) + (cNUM_X_TILES/2) - 1 in
+    let x = Random.int (cNUM_Y_TILES) - 1 in
+  choose_tile_Blue st (x, y)
+  else t
 
 (* For QueueBuild - checks if there are enough resources to build 
  * Takes: state, color of team, building_type to be built
@@ -274,19 +348,21 @@ st.red_team_data.wc) else (st.blue_team_data.fc, st.blue_team_data.wc) in
 (* For QueueBuild - subtract cost, add the unit_id and cooldown time to list 
  * Takes: state, color of builder, unit_id of builder
  * Returns: a new state *)   
-let start_build (st:state) (c:color) (id:unit_id) : state =
+let start_build (st:state) (c:color) (id:unit_id) : unit =
   let (food_cost,wood_cost) = cBARRACKS_COST in
-  let team_build_list = if c = Red then st.red_build_ctime else 
-st.blue_build_ctime in
+  let team_build_list = if c = Red then st.red_ctime else 
+st.blue_ctime in
   let team_data_list = if c = Red then st.red_team_data else
 st.blue_team_data in
   let subtract_resources lst = lst.fc <- (lst.fc - food_cost);
 lst.wc <- (lst.wc - wood_cost) in
   let update_builder lst = List.fold_left (fun acc hd -> if
     hd.cdrec_uid = id then (hd.starttime <- (Unix.gettimeofday()); hd.ctime <-
-    cVILLAGER_COOLDOWN; hd.building <- true) else
+    cVILLAGER_COOLDOWN; hd.building <- true; Netgraphics.add_update (DoCollect
+    (hd.cdrec_uid, c, Food, ((-1)*(food_cost)))); Netgraphics.add_update
+    (DoCollect (hd.cdrec_uid, c, Wood, ((-1)*(wood_cost))))) else
      acc) () lst in
-  subtract_resources (team_data_list); update_builder (team_build_list); st
+  subtract_resources (team_data_list); update_builder (team_build_list)
 
 (* For QueueSpawn - checks if the unit_type to be spawned is correct level 
  * Takes: state, color of spawning team, unit_type to be spawned
@@ -324,15 +400,23 @@ let get_adj_tile (t:tile) : tile =
   else if (is_valid_tile (r, c+2)) then (r, c+2)
   else (r, c) 
 
+let unit_matches_building (st:state) (c:color) (bi:building_id)
+(utype:unit_type) : bool =
+  let bdata = if c = Red then st.red_team_data.bdl else st.blue_team_data.bdl in
+  let btype = List.fold_left (fun acc hd ->
+    if hd.bdrec_bi = bi then hd.bdrec_bt else acc) Barracks bdata in
+  (btype = TownCenter && utype = Villager) ||
+  (btype = Barracks && (not (utype = Villager)))
+
 (* For QueueSpawn - spawns the unit for the given team, updates state
  * Takes: state, color, the building for spawning, the type to spawn
  * Returns: an updated state *)
 let spawn_unit (st:state) (c:color) (id:building_id) (utype:unit_type) :
 unit =
+  let (food_cost, wood_cost) = get_unit_cost utype in
   let subtract_costs = 
     let team_data = if c = Red then st.red_team_data else st.blue_team_data in
     let (food_count, wood_count) = (team_data.fc, team_data.wc) in
-    let (food_cost, wood_cost) = get_unit_cost utype in
   (team_data.fc <- (food_count - food_cost)); (team_data.wc <- (wood_count -
   wood_cost)) in
   let pos_of_spawned = 
@@ -359,7 +443,9 @@ unit =
       st.blue_attack <- (new_attacks::st.blue_attack)) in
   let add_to_gui =
     Netgraphics.add_update (AddUnit (id_of_spawned, utype, pos_of_spawned,
-    health_of_spawned, c)) in
+    health_of_spawned, c)); Netgraphics.add_update (DoCollect (id_of_spawned,
+    c, Food, ((-1)*(food_cost)))); Netgraphics.add_update (DoCollect (
+    id_of_spawned, c, Wood, ((-1)*(wood_cost)))) in
   subtract_costs; add_to_state; add_to_gui
 
 (* For ClearAttack - finds the attack queue of a given unit id 
@@ -379,6 +465,70 @@ let clear_move (st:state) (c:color) (id:unit_id) : unit =
   let clear_queue lst = List.fold_left (fun acc hd -> if hd.mqueue_uid = id then
     (Queue.clear hd.moves) else acc) () lst in
   clear_queue moves_queue
+
+(* Upgrades the age for color c - Called by upgrade_types *)
+let upgrade_age (st:state) (c:color) : bool =
+  let team_data = if c = Red then st.red_team_data else st.blue_team_data in
+  let (food_cost, wood_cost) = cUPGRADE_AGE_COST in
+  let (food_count, wood_count) = (team_data.fc, team_data.wc) in
+  let upgrade_state = 
+    team_data.fc <- (food_count-food_cost);team_data.wc <- 
+    (wood_count-wood_cost); (team_data.a <- ImperialAge) in
+  let upgrade_gui = Netgraphics.add_update (UpgradeAge (c));
+    Netgraphics.add_update (DoCollect (0, c, Food, ((-1)*food_cost)));
+    Netgraphics.add_update (DoCollect (0, c, Wood, ((-1)*wood_cost))) in
+  if (team_data.a = DarkAge) then (upgrade_state; upgrade_gui; true)
+  else false
+
+(* For AgeUpgrade - checks if color is already in ImperialAge *)
+let age_already_upgraded (st:state) (c:color) : bool =
+  let agedata = if c = Red then st.red_team_data.a else st.blue_team_data.a in
+  agedata = ImperialAge
+
+(* For UnitUpgrade - checks if the unit is already upgraded *)
+let unit_already_upgraded (st:state) (c:color) (utype:unit_type) : bool =
+  let teamdata = if c = Red then st.red_team_data else st.blue_team_data in
+  match utype with
+    Pikeman | ElitePikeman -> teamdata.up.pikeman
+    | Archer | EliteArcher -> teamdata.up.archer
+    | Knight | EliteKnight -> teamdata.up.knight
+    | _ -> false
+
+(* Upgrades a unit type for the state and gui 
+ * Called by upgrade_types *)
+let upgrade_unit (st:state) (c:color) (utype:unit_type) : bool =
+  let team_data = if c = Red then st.red_team_data else st.blue_team_data in
+  let (inf_version, elite_version) =
+    match utype with
+      Pikeman | ElitePikeman -> (Pikeman, ElitePikeman)
+      | Archer | EliteArcher -> (Archer, EliteArcher)
+      | Knight | EliteKnight -> (Knight, EliteKnight)
+      | _ -> failwith "Already checked Villager in upgrade_types" in
+  let upgrade_record =
+     match elite_version with
+      ElitePikeman -> team_data.up.pikeman <- true
+      | EliteArcher -> team_data.up.archer <- true
+      | EliteKnight -> team_data.up.knight <- true 
+      | _ -> () in
+  let check_age = unit_matches_age st c utype in
+  let (food_cost, wood_cost) =
+    match elite_version with
+      ElitePikeman -> cUPGRADE_PIKEMAN_COST
+      | EliteArcher -> cUPGRADE_ARCHER_COST
+      | EliteKnight -> cUPGRADE_KNIGHT_COST
+      | _ -> (-1, -1) in
+  let upgrade_state =
+    let (food_count, wood_count) = (team_data.fc, team_data.wc) in
+    let traverse_units lst = List.fold_left (fun acc hd ->
+      if hd.udrec_ut = inf_version then hd.udrec_ut <- elite_version
+      else acc) () lst in
+    traverse_units (team_data.udl); team_data.fc <-(food_count-food_cost); 
+    team_data.wc <-(wood_count-wood_cost) in
+  let upgrade_gui = Netgraphics.add_update (UpgradeUnit (inf_version, c));
+    Netgraphics.add_update (DoCollect (0, c, Food, ((-1)*(food_cost))));
+    Netgraphics.add_update (DoCollect (0, c, Wood, ((-1)*(wood_cost)))) in
+  if (check_age) then (upgrade_state;
+    upgrade_gui; upgrade_record; true) else false
 
 (* For Upgrade - checks if the team has enough resources, if the upgrade is 
  * appropriate for the age, and whether the upgrade has already been done *)
@@ -402,56 +552,6 @@ let upgrade_types (st:state) (c:color) (uptype:upgrade_type) : bool =
       AgeUpgrade -> (upgrade_age st c)
       | UnitUpgrade utype -> (upgrade_unit st c utype)
   else false
-
-(* Upgrades the age for color c - Called by upgrade_types *)
-let upgrade_age (st:state) (c:color) : bool =
-  let team_data = if c = Red then st.red_team_data else st.blue_team_data in
-  let upgrade_state = 
-    let (food_cost, wood_cost) = cUPGRADE_AGE_COST in
-    let (food_count, wood_count) = (team_data.fc, team_data.wc) in
-  team_data.fc <- (food_count-food_cost);team_data.wc <- (wood_count-wood_cost);
-  team_data.a <- ImperialAge in
-  let upgrade_gui = Netgraphics.add_update (UpgradeAge (c)) in
-  if (team_data.a <> ImperialAge) then (upgrade_state; upgrade_gui; true)
-  else false
-
-(* Upgrades a unit type for the state and gui 
- * Called by upgrade_types *)
-let upgrade_unit (st:state) (c:color) (utype:unit_type) : bool =
-  let team_data = if c = Red then st.red_team_data else st.blue_team_data in
-  let (inf_version, elite_version) =
-    match utype with
-      Pikeman | ElitePikeman -> (Pikeman, ElitePikeman)
-      | Archer | EliteArcher -> (Archer, EliteArcher)
-      | Knight | EliteKnight -> (Knight, EliteKnight)
-      | _ -> failwith "Already checked Villager in upgrade_types" in
-  let already_upgraded =
-    match elite_version with
-      ElitePikeman -> team_data.up.pikeman
-      | EliteArcher -> team_data.up.archer
-      | EliteKnight -> team_data.up.knight in
-  let upgrade_record =
-     match elite_version with
-      ElitePikeman -> team_data.up.pikeman <- true
-      | EliteArcher -> team_data.up.archer <- true
-      | EliteKnight -> team_data.up.knight <- true in
-  let check_age = unit_matches_age st c utype in
-  let upgrade_state =
-    let (food_cost, wood_cost) =
-      match elite_version with
-        ElitePikeman -> cUPGRADE_PIKEMAN_COST
-        | EliteArcher -> cUPGRADE_ARCHER_COST
-        | EliteKnight -> cUPGRADE_KNIGHT_COST
-        | _ -> (-1, -1) in
-    let (food_count, wood_count) = (team_data.fc, team_data.wc) in
-    let traverse_units lst = List.fold_left (fun acc hd ->
-      if hd.udrec_ut = inf_version then hd.udrec_ut <- elite_version
-      else acc) () lst in
-    traverse_units (team_data.udl); team_data.fc <-(food_count-food_cost); 
-    team_data.wc <-(wood_count-wood_cost) in
-  let upgrade_gui = Netgraphics.add_update (UpgradeUnit (inf_version, c)) in
-  if (check_age) && (already_upgraded = false) then (upgrade_state;
-    upgrade_gui; true) else false
 
 let unit_data_to_tuple (record_form:udrec) : unit_data =
   (record_form.udrec_uid, record_form.udrec_ut, record_form.udrec_h, 
@@ -522,14 +622,25 @@ let rec find_first_attack (st:state) (ct:color) (utype:unit_type) (pos:position)
 () else
   let target_health =
     match Queue.peek attacks with
-      Building b -> get_building_health st ct b
+      Building b ->
+        get_building_health st ct b
       | Unit u -> get_unit_health st ct u in
   let check_range =
-    let targetpos = 
+    let (targetx, targety) = 
       match Queue.peek attacks with
-        Building b -> position_of_tile (get_building_tile st ct b)
+        Building b ->
+          position_of_tile (get_building_tile st ct b)
         | Unit u -> get_unit_pos st ct u in
-    (length_of_range (get_unit_type_range utype)) >= (distance pos targetpos) in
+    let range = length_of_range (get_unit_type_range utype) in
+    let (r, c) = tile_of_pos (targetx, targety) in
+    match Queue.peek attacks with
+      Building b ->
+    ((range >= (distance pos (targetx, targety))) ||
+    (range >= (distance pos (position_of_tile (r+1,c)))) ||
+    (range >= (distance pos (position_of_tile (r,c+1)))) ||
+    (range >= (distance pos (position_of_tile (r+1,c+1))))) 
+      | Unit u ->
+         range >= (distance pos (targetx, targety)) in
   if (target_health > 0 && check_range) then ()
   else if (Queue.length attacks) = 1 then ignore(Queue.pop attacks)
   else (ignore(Queue.pop attacks); find_first_attack st ct utype pos attacks)
@@ -541,7 +652,7 @@ let handle_attacks (st:state) (curr_time:float) : unit =
   let check_not_coolingdown ca id =
     let team_cooldowns = if ca = Red then st.red_ctime else st.blue_ctime in
     let check lst = List.fold_left (fun acc hd -> if hd.cdrec_uid = id then
-      (hd.starttime = (-1.)) else acc) false lst in
+      (curr_time -. hd.starttime >= hd.ctime) else acc) false lst in
     check team_cooldowns in
   let update_unit_health_state ct id new_health = 
     let unitdata = if ct = Red then st.red_team_data.udl else 
@@ -584,12 +695,13 @@ let handle_attacks (st:state) (curr_time:float) : unit =
   let traverse_attacks lst ca ct = List.fold_left 
     (fun acc hd ->
       if (check_not_coolingdown ca hd.aqueue_uid) then
-        (let pos_of_attacker = get_unit_pos st ct hd.aqueue_uid in
-        let type_of_attacker = get_unit_type st ct hd.aqueue_uid in
+        (let pos_of_attacker = get_unit_pos st ca hd.aqueue_uid in
+        let type_of_attacker = get_unit_type st ca hd.aqueue_uid in
         (find_first_attack st ct type_of_attacker pos_of_attacker 
-         hd.attacks); 
+         hd.attacks);
         if (Queue.length hd.attacks) > 0 then
-          (match (Queue.pop hd.attacks) with
+          (Netgraphics.add_update (DoAttack (hd.aqueue_uid));
+          match (Queue.pop hd.attacks) with
             Building b ->
               let new_health = get_new_health_building type_of_attacker ct b in
                 update_building_health_state ct b new_health;
@@ -642,18 +754,20 @@ let remove_dead_units_and_buildings (st:state) : unit =
     remove_buildings dead_buildings; total_dead in
   let remove_dead_buildings_state = 
     List.fold_left (fun acc hd -> if hd.bdrec_h = 0 then acc else hd::acc) [] in
-  st.red_team_data.s <- (st.red_team_data.s + 
-    (remove_dead_units_gui st.red_team_data.udl) * cKILL_UNIT_SCORE); 
   st.blue_team_data.s <- (st.blue_team_data.s + 
+    (remove_dead_units_gui st.red_team_data.udl) * cKILL_UNIT_SCORE); 
+  st.red_team_data.s <- (st.red_team_data.s + 
     (remove_dead_units_gui st.blue_team_data.udl) * cKILL_UNIT_SCORE); 
   st.red_team_data.udl <- remove_dead_units_udl Red st.red_team_data.udl;
   st.blue_team_data.udl <- remove_dead_units_udl Blue st.blue_team_data.udl; 
-  st.red_team_data.s <- st.red_team_data.s + 
-    (remove_dead_buildings_gui st.red_team_data.bdl) * cKILL_BUILDING_SCORE; 
   st.blue_team_data.s <- st.blue_team_data.s + 
+    (remove_dead_buildings_gui st.red_team_data.bdl) * cKILL_BUILDING_SCORE;
+  st.red_team_data.s <- st.red_team_data.s + 
     (remove_dead_buildings_gui st.blue_team_data.bdl) * cKILL_BUILDING_SCORE; 
   st.red_team_data.bdl <- remove_dead_buildings_state st.red_team_data.bdl;
-  st.blue_team_data.bdl <- remove_dead_buildings_state st.blue_team_data.bdl 
+  st.blue_team_data.bdl <- remove_dead_buildings_state st.blue_team_data.bdl;
+  Netgraphics.add_update (UpdateScore (Red, (st.red_team_data.s)));
+  Netgraphics.add_update (UpdateScore (Blue, (st.blue_team_data.s))) 
 
 (* For handleTime - removes all zero resources from state and gui *)
 let remove_zero_resources (st:state) : unit =
@@ -682,8 +796,11 @@ st.blue_team_data.bdl in
         let new_tile = tile_of_pos (get_unit_pos st c hd.cdrec_uid) in
         let new_type = Barracks in
         let new_health = cBARRACKS_HEALTH in
+        let age_status = if c = Red then st.red_team_data.a else
+          st.blue_team_data.a in
         Netgraphics.add_update (AddBuilding (new_id, new_type, new_tile,
-        new_health, c));
+        new_health, c)); (if age_status = ImperialAge then
+          (Netgraphics.add_update (UpgradeAge c)) else ());
         (hd.building <- false; hd.starttime <- (-1.); hd.ctime <- (-1.));
         ((({cdrec_uid=new_id; ctime=(-1.); starttime=(-1.); building=false})::hd
         ::acc_ctime), (({bdrec_bi=new_id; bdrec_bt=new_type; bdrec_h=new_health;
@@ -697,5 +814,42 @@ st.blue_team_data.bdl in
   st.red_team_data.bdl <- new_red_building;
   st.blue_ctime <- new_blue_cooldown;
   st.blue_team_data.bdl <- new_blue_building
+
+(* Updates the positions of Villagers that are not cooling down, military units
+ * Changes the position in the state and updates gui *)
+let update_positions (st:state) (curr_time:float) : unit =
+  let check_not_coolingdown c id =
+    let team_cooldowns = if c = Red then st.red_ctime else st.blue_ctime in
+    List.fold_left (fun acc hd -> if hd.cdrec_uid = id then
+      (curr_time -. hd.starttime >= hd.ctime) else acc) false team_cooldowns in
+  let find_first_move moves_rec c =
+    let utype = get_unit_type st c moves_rec.mqueue_uid in
+    let uspeed = get_unit_type_speed utype in
+    let curr_pos = get_unit_pos st c moves_rec.mqueue_uid in
+    let rec helper queue =
+      if (Queue.length queue = 0) || ((distance curr_pos (Queue.peek queue)) <= 
+        uspeed +. 1.) then (Queue.length queue)
+      else (ignore(Queue.pop queue); helper queue) in
+    helper moves_rec.moves in
+  let update_state c id new_pos =
+    let unitdata = if c = Red then st.red_team_data.udl else
+      st.blue_team_data.udl in
+    List.fold_left (fun acc hd -> if hd.udrec_uid = id then hd.udrec_pos <- 
+      new_pos else acc) () unitdata in
+  let update_gui c id new_pos =
+    Netgraphics.add_update (MoveUnit (id, [new_pos], c)) in
+  let update_state_and_gui lst c =
+    List.fold_left (fun acc hd ->
+      if (check_not_coolingdown c hd.mqueue_uid) then
+        (let length = find_first_move hd c in 
+          (if length > 0
+           then (let new_pos = Queue.pop hd.moves in
+           update_state c hd.mqueue_uid new_pos; update_gui c hd.mqueue_uid
+           new_pos) else ()))
+      else ()) () lst in
+   (update_state_and_gui st.red_move Red);
+    (update_state_and_gui st.blue_move Blue) 
+  
+    
            
 
